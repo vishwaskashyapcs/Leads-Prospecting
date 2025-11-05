@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Lead Finder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="/static/styles.css"/>
+</head>
+<body>
+  <div class="container">
+    <h1>Lead Finder</h1>
+    <p class="sub">Type a company / lead name. We’ll search, scrape and export a CSV.</p>
+
+    <form id="lead-form">
+      <input id="query" type="text" placeholder="e.g., Taj Hotels" required />
+      <button type="submit">Find Lead</button>
+    </form>
+
+    <div id="status" class="status hidden">
+      <div class="spinner"></div>
+      <div class="msg">
+        <div id="status-line">Starting…</div>
+        <div class="tips" id="dynamic-tip"></div>
+      </div>
+    </div>
+
+    <div id="result" class="result hidden"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
