@@ -1,15 +1,20 @@
 from __future__ import annotations
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urlparse
 import re
-from timezonefinder import TimezoneFinder
-import pytz
-_tf = TimezoneFinder()
-from typing import Tuple, Dict, Any, List, Optional
 
+# Optional: timezone from lat/lng if present in Maps output
+try:
+    from timezonefinder import TimezoneFinder
+    _TF = TimezoneFinder()
+except Exception:
+    _TF = None
 
+# -----------------------------
+# Small utilities
+# -----------------------------
 def _first_or_none(seq: Optional[List[str]]) -> Optional[str]:
-    return (seq[0] if seq else None)
+    return seq[0] if seq else None
 
 
 def guess_company_name(site_name: Optional[str], title: Optional[str]) -> Optional[str]:
@@ -17,29 +22,19 @@ def guess_company_name(site_name: Optional[str], title: Optional[str]) -> Option
     Returns a neat brand name from site_name/title, stripping boilerplate like
     ': Home', '- Home', '| Official Site', etc.
     """
-    CANDIDATES = [site_name, title]
-    for cand in CANDIDATES:
+    for cand in (site_name, title):
         if not cand:
             continue
         s = cand.strip()
-
-        # Strip common separators + trailing sections
-        # Examples handled: "Zapcom: Home", "Zapcom - Home", "Zapcom | Home"
         s = re.sub(r"\s*[:\-\|–—]\s*home\s*$", "", s, flags=re.I)
-
-        # Also strip generic tails: About us / Official Site / Welcome
         s = re.sub(r"\s*[:\-\|–—]\s*(about( us)?|official site|welcome)\s*$", "", s, flags=re.I)
-
-        # Remove repeated spaces
+        s = re.sub(r"\s*\|\s*.*$", "", s).strip()
         s = re.sub(r"\s{2,}", " ", s).strip()
-
         if s:
             return s
-
     return site_name or title
 
 
-# --- Country code -> name (tiny map; extend as needed) ---
 COUNTRY_CODE_MAP = {
     "IN": "India", "US": "United States", "GB": "United Kingdom", "AE": "United Arab Emirates",
     "SG": "Singapore", "DE": "Germany", "FR": "France", "ES": "Spain", "IT": "Italy",
@@ -52,6 +47,7 @@ def _expand_country(val: str) -> str:
     v = val.strip()
     return COUNTRY_CODE_MAP.get(v.upper(), v)
 
+
 def _strip_trailing_dash(u: str) -> str:
     return u[:-1] if u and u.endswith("-") else u
 
@@ -59,55 +55,65 @@ def _strip_trailing_dash(u: str) -> str:
 def pick_official_site(google_results: List[Dict[str, Any]]) -> Optional[str]:
     if not google_results:
         return None
-    bad_hosts = ("linkedin.com", "facebook.com", "instagram.com", "tripadvisor.", "booking.", "google.com", "maps.google")
+    bad_hosts = ("linkedin.com", "facebook.com", "instagram.com",
+                 "tripadvisor.", "booking.", "google.com", "maps.google")
     filtered = [r for r in google_results if not any(b in (r.get("url") or "") for b in bad_hosts)]
     return (filtered[0].get("url") if filtered else google_results[0].get("url"))
+
 
 def _root_token(host: Optional[str]) -> Optional[str]:
     if not host:
         return None
     parts = host.lower().split(".")
-    # crude root token: second-level label (e.g., "zapcom" from zapcom.ai)
     return parts[-2] if len(parts) >= 2 else parts[0]
 
-from urllib.parse import urlparse
+
+def _registrable_domain(host: str) -> str:
+    """
+    Naive eTLD+1 (good enough for most cases, avoids extra deps).
+    """
+    host = (host or "").lower().split(":")[0]
+    parts = host.split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
 
 def _filter_emails_by_domain(emails: List[str], official_url: Optional[str]) -> List[str]:
+    """
+    Prefer emails that match the site's registrable domain (e.g., foo@zapcom.ai for zapcom.ai).
+    Falls back to brand-token containment if strict match yields none.
+    """
     if not emails:
         return []
     if not official_url:
         return sorted(set(emails))
 
-    host = urlparse(official_url).netloc.lower().split(":")[0]
-    parts = host.split(".")
-    registrable = ".".join(parts[-2:]) if len(parts) >= 2 else host  # naive eTLD+1
-    keep = [e for e in set(emails) if e.lower().endswith("@" + registrable)]
-    # Fallback: if strict match finds none, fall back to brand-token logic you had
-    if keep:
-        return sorted(set(keep))
+    host = urlparse(official_url).netloc
+    registrable = _registrable_domain(host)
+    strict = [e for e in set(emails) if e.lower().endswith("@" + registrable)]
+    if strict:
+        return sorted(set(strict))
 
-    # brand token fallback
-    token = parts[-2] if len(parts) >= 2 else parts[0]
+    token = _root_token(host) or ""
     keep2 = []
     for e in set(emails):
         try:
             edomain = e.split("@", 1)[1].lower()
         except Exception:
             continue
-        if token in edomain:
+        if token and token in edomain:
             keep2.append(e)
     return sorted(set(keep2))
 
 
 def _clean_phone(p: str) -> Optional[str]:
     # keep digits and +; collapse spaces/dashes
-    digits = re.sub(r"[^\d+]", "", p)
-    # reject obvious non-phones like employee ranges 201-1000, etc.
-    # keep 8..15 digits (typical E.164 length range)
+    digits = re.sub(r"[^\d+]", "", p or "")
+    # typical E.164 range (8..15 digits)
     dcount = len(re.sub(r"[^\d]", "", digits))
     if dcount < 8 or dcount > 15:
         return None
     return digits
+
 
 def _merge_and_clean_phones(raws: List[str]) -> List[str]:
     cleaned = []
@@ -117,77 +123,6 @@ def _merge_and_clean_phones(raws: List[str]) -> List[str]:
             cleaned.append(cp)
     return sorted(set(cleaned))
 
-def _pick_linkedin(urls: List[str]) -> Optional[str]:
-    if not urls:
-        return None
-    # prefer company page without /posts
-    companies = [u for u in urls if "/company/" in u and "/posts" not in u]
-    if companies:
-        return companies[0]
-    # else first linkedin link
-    return urls[0]
-
-from typing import Dict, Any, List, Optional
-from urllib.parse import urlparse
-import re
-
-def _first_or_none(seq: Optional[List[str]]) -> Optional[str]:
-    return (seq[0] if seq else None)
-
-def guess_company_name(site_name: Optional[str], title: Optional[str]) -> Optional[str]:
-    for cand in [site_name, title]:
-        if cand:
-            c = re.sub(r"\s*\|\s*.*$", "", cand).strip()
-            c = re.sub(r"\s*-\s*Home\s*$", "", c, flags=re.I)
-            if c:
-                return c
-    return site_name or title
-
-def pick_official_site(google_results: List[Dict[str, Any]]) -> Optional[str]:
-    if not google_results:
-        return None
-    bad_hosts = ("linkedin.com", "facebook.com", "instagram.com", "tripadvisor.", "booking.", "google.com", "maps.google")
-    filtered = [r for r in google_results if not any(b in (r.get("url") or "") for b in bad_hosts)]
-    return (filtered[0].get("url") if filtered else google_results[0].get("url"))
-
-def _root_token(host: Optional[str]) -> Optional[str]:
-    if not host:
-        return None
-    parts = host.lower().split(".")
-    return parts[-2] if len(parts) >= 2 else parts[0]
-
-def _filter_emails_by_domain(emails: List[str], official_url: Optional[str]) -> List[str]:
-    if not emails:
-        return []
-    if not official_url:
-        return sorted(set(emails))
-    host = urlparse(official_url).netloc
-    token = _root_token(host)
-    if not token:
-        return sorted(set(emails))
-    keep = []
-    for e in set(emails):
-        parts = e.split("@", 1)
-        if len(parts) == 2:
-            edomain = parts[1].lower()
-            if token in edomain:
-                keep.append(e)
-    return sorted(set(keep))
-
-def _clean_phone(p: str) -> Optional[str]:
-    digits = re.sub(r"[^\d+]", "", p)
-    dcount = len(re.sub(r"[^\d]", "", digits))
-    if dcount < 8 or dcount > 15:
-        return None
-    return digits
-
-def _merge_and_clean_phones(raws: List[str]) -> List[str]:
-    cleaned = []
-    for p in raws or []:
-        cp = _clean_phone(p)
-        if cp:
-            cleaned.append(cp)
-    return sorted(set(cleaned))
 
 def _pick_linkedin(urls: List[str]) -> Optional[str]:
     if not urls:
@@ -197,9 +132,57 @@ def _pick_linkedin(urls: List[str]) -> Optional[str]:
         return companies[0]
     return urls[0]
 
-from typing import Dict, Any, List, Optional, Tuple
-from urllib.parse import urlparse
 
+# ============================
+# NEW: Normalizer for leads API
+# ============================
+def normalize_items(items: List[Dict[str, Any]], filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Convert raw Apify items (from Sales Navigator-style actor) to a stable schema
+    and enforce filters defensively.
+
+    Output keys (stable):
+      company_name, company_size, country, city, website, linkedin_url,
+      role, person_name, person_email, person_linkedin, source
+    """
+    out: List[Dict[str, Any]] = []
+    size_min = int(filters.get("company_size_min", 1))
+    size_max = int(filters.get("company_size_max", 10_000_000))
+    countries = set(filters.get("countries", []))
+
+    for it in items or []:
+        row = {
+            "company_name": it.get("companyName") or it.get("name") or it.get("Company Name") or "",
+            "company_size": it.get("companySize") or it.get("Employees") or None,
+            "country": it.get("country") or it.get("Country") or None,
+            "city": it.get("city") or it.get("City") or None,
+            "website": it.get("website") or it.get("Website") or None,
+            "linkedin_url": it.get("companyLinkedinUrl") or it.get("linkedin") or it.get("LinkedIn URL") or None,
+            "role": it.get("role") or it.get("title") or None,
+            "person_name": it.get("personName") or it.get("contactName") or None,
+            "person_email": it.get("email") or it.get("personEmail") or None,
+            "person_linkedin": it.get("personLinkedin") or it.get("contactLinkedinUrl") or None,
+            "source": "apify",
+        }
+
+        # Enforce filters (best-effort parsing of size)
+        try:
+            size_val = int(row["company_size"]) if row["company_size"] is not None else None
+        except Exception:
+            size_val = None
+
+        if size_val is not None and not (size_min <= size_val <= size_max):
+            continue
+        if countries and row["country"] and row["country"] not in countries:
+            continue
+
+        out.append(row)
+    return out
+
+
+# ==============================================
+# Legacy: Build a single enriched record (old UX)
+# ==============================================
 def assemble_lead_record(
     query: str,
     google_results: List[Dict[str, Any]],
@@ -207,6 +190,10 @@ def assemble_lead_record(
     maps_place: Optional[Dict[str, Any]] = None,
     linkedin_url: Optional[str] = None
 ) -> Dict[str, Any]:
+    """
+    Merges Google+Scraper+Maps into one human-friendly record
+    (your old /api/run flow).
+    """
     official = pick_official_site(google_results)
     domain = urlparse(official).netloc if official else None
 
@@ -215,17 +202,15 @@ def assemble_lead_record(
     company, city, country = None, None, None
     industry_type = None
     timezone = ""
-    locations = set()  # NEW: to populate "Location(s) of Operation)"
+    locations = set()  # to populate "Location(s) of Operation)"
 
-    # -------- helpers --------
     def _clean_linkedin(u: Optional[str]) -> Optional[str]:
         if not u:
             return None
         u = u.split("?", 1)[0].rstrip("/")
         if u.endswith("/posts"):
             u = u[:-6].rstrip("/")
-        u = _strip_trailing_dash(u)  # NEW: remove trailing "-"
-        return u
+        return _strip_trailing_dash(u)
 
     def _classify_industry(category: str, schema: str) -> Tuple[str, str]:
         c = (category or "").lower()
@@ -272,7 +257,7 @@ def assemble_lead_record(
         if not country and addr.get("country"):
             country = addr.get("country")
 
-        # NEW: collect location strings like "City, Region/Country"
+        # Collect location strings like "City, Region/Country"
         loc_parts = [addr.get("city"), addr.get("region"), addr.get("country")]
         loc_str = ", ".join([p for p in loc_parts if p])
         if loc_str:
@@ -281,8 +266,8 @@ def assemble_lead_record(
         stype = row.get("schemaType") or ""
         if isinstance(stype, str) and not industry_type:
             s = stype.lower()
-            if "hotel" in s:       industry_type = "Hotel"
-            elif "resort" in s:    industry_type = "Resort"
+            if   "hotel"  in s: industry_type = "Hotel"
+            elif "resort" in s: industry_type = "Resort"
             elif "organization" in s: industry_type = "Organization"
 
     # -------- Google Maps enrichment --------
@@ -314,25 +299,19 @@ def assemble_lead_record(
             if not country and (addr.get("country") or addr.get("countryCode")):
                 country = addr.get("country") or addr.get("countryCode")
 
-            # NEW: add a location string from Maps address
             loc_parts = [addr.get("city"), addr.get("region"), addr.get("country") or addr.get("countryCode")]
             loc_str = ", ".join([p for p in loc_parts if p])
             if loc_str:
                 locations.add(loc_str)
 
-        # timezone from lat/lng (silent fallback if libs missing)
+        # timezone from lat/lng (best-effort)
         try:
             loc = (maps_place.get("_raw") or {}).get("location") or {}
             lat, lng = loc.get("lat"), loc.get("lng")
-            if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
-                try:
-                    from timezonefinder import TimezoneFinder  # optional dependency
-                    _tf = TimezoneFinder()
-                    tzname = _tf.timezone_at(lng=lng, lat=lat)
-                    if tzname:
-                        timezone = tzname
-                except Exception:
-                    pass
+            if _TF and isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                tzname = _TF.timezone_at(lng=lng, lat=lat)
+                if tzname:
+                    timezone = tzname
         except Exception:
             pass
 
@@ -355,10 +334,7 @@ def assemble_lead_record(
     if type_from_cat and not industry_type:
         industry_type = type_from_cat
 
-    # Expand country code (e.g., "IN" -> "India")
     country_expanded = _expand_country(country or "")
-
-    # Compose a readable locations string (dedup, keep order)
     locations_str = " | ".join(list(dict.fromkeys(locations))) if locations else ""
 
     # -------- build output --------
@@ -380,17 +356,9 @@ def assemble_lead_record(
         "Number of Properties": "",
         "Number of Rooms": "",
         "Average Daily Rate (ADR)": "",
-        "Location(s) of Operation": locations_str,  # NEW
+        "Location(s) of Operation": locations_str,
         "Industry Type (Hotel / Resort / Service Apartment, etc.)": industry_type or "",
         "Google Rating": str(rating_value) if rating_value is not None else "",
         "Total Google Reviews": str(review_count) if review_count is not None else "",
     }
-
-    # Optional: mark hotel-only fields as N/A for non-hospitality
-    # if industry_segment != "Hospitality":
-    #     for k in ["Property Type (Chain / Independent / Partner)",
-    #               "Star Rating (1–5)", "Number of Properties",
-    #               "Number of Rooms", "Average Daily Rate (ADR)"]:
-    #         out[k] = "N/A"
-
     return out

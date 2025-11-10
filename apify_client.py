@@ -1,16 +1,27 @@
 import os
 import time
+import json
 import requests
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- Env / constants ---
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
+
+# Existing actors
 GOOGLE_ACTOR_ID = os.getenv("GOOGLE_ACTOR_ID", "apify~google-search-scraper")
 WEB_SCRAPER_ACTOR_ID = os.getenv("WEB_SCRAPER_ACTOR_ID", "apify~web-scraper")
+GOOGLE_MAPS_ACTOR_ID = os.getenv("GOOGLE_MAPS_ACTOR_ID", "compass~crawler-google-places")
 
+# Sales Navigator-style actor (both spellings supported)
+SALES_NAV_ACTOR_ID = os.getenv("SALES_NAV_ACTOR_ID", "muhammad_usama~Apify-Sales-Navifgator")
+FALLBACK_SALES_NAV_ACTOR_ID = "muhammad_usama~Apify-Sales-Navigator"
 
+# Sales Navigator auth + behavior (read *only* for convenience; we also read dynamically inside the call)
+SALES_NAV_COOKIE_STRING = os.getenv("SALES_NAV_COOKIE_STRING")  # e.g. 'li_at=...; JSESSIONID="ajax:..."; ...'
+SALES_NAV_COOKIES_JSON = os.getenv("SALES_NAV_COOKIES_JSON")    # JSON array of cookie objects
 
 API_BASE = "https://api.apify.com/v2"
 
@@ -19,87 +30,85 @@ class ApifyError(Exception):
     pass
 
 
-def _ensure_token():
-    if not APIFY_TOKEN:
+def _ensure_token(token: Optional[str] = None) -> str:
+    tok = token or APIFY_TOKEN
+    if not tok:
         raise ApifyError("APIFY_TOKEN missing. Set it in .env")
+    return tok
 
 
-def start_actor(actor_id: str, input_body: Dict[str, Any]) -> Dict[str, Any]:
-    """Start an Apify actor run and return the run object."""
-    _ensure_token()
-    url = f"{API_BASE}/acts/{actor_id}/runs?token={APIFY_TOKEN}"
-    resp = requests.post(url, json=input_body, timeout=60)
+# ---------------------------
+# Generic run helpers
+# ---------------------------
+def start_actor(actor_id: str, input_body: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
+    tok = _ensure_token(token)
+    url = f"{API_BASE}/acts/{actor_id}/runs?token={tok}"
+    resp = requests.post(url, json=input_body, timeout=90)
     if resp.status_code >= 400:
         raise ApifyError(f"Failed to start actor {actor_id}: {resp.text}")
-    return resp.json().get("data", {})  # run object
+    return resp.json().get("data", {})
 
 
-def get_run(run_id: str) -> Dict[str, Any]:
-    _ensure_token()
-    url = f"{API_BASE}/actor-runs/{run_id}"
+def get_run(run_id: str, token: Optional[str] = None) -> Dict[str, Any]:
+    tok = _ensure_token(token)
+    url = f"{API_BASE}/actor-runs/{run_id}?token={tok}"
     resp = requests.get(url, timeout=60)
     if resp.status_code >= 400:
         raise ApifyError(f"Failed to get run {run_id}: {resp.text}")
     return resp.json().get("data", {})
 
 
-def wait_for_run_finished(run_id: str, timeout_sec: int = 180, poll_interval: float = 2.5) -> Dict[str, Any]:
-    """Polls until run is FINISHED / FAILED / ABORTED or timeout."""
+def wait_for_run_finished(
+    run_id: str,
+    timeout_sec: int = 300,
+    poll_interval: float = 2.5,
+    token: Optional[str] = None,
+) -> Dict[str, Any]:
     start = time.time()
+    terminal = {"SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT", "TIMED_OUT"}
     while True:
-        run = get_run(run_id)
-        status = run.get("status")
-        if status in ("SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"):
+        run = get_run(run_id, token=token)
+        status = (run or {}).get("status")
+        if status in terminal:
             return run
         if (time.time() - start) > timeout_sec:
             raise ApifyError(f"Run {run_id} timed out. Last status: {status}")
         time.sleep(poll_interval)
 
 
-def dataset_items(dataset_id: str, clean: bool = True, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    _ensure_token()
-    params = {"clean": "true" if clean else "false", "format": "json"}
+def dataset_items(dataset_id: str, clean: bool = True, limit: Optional[int] = None, token: Optional[str] = None) -> List[Dict[str, Any]]:
+    tok = _ensure_token(token)
+    params = {"clean": "true" if clean else "false", "format": "json", "token": tok}
     if limit:
         params["limit"] = str(limit)
     url = f"{API_BASE}/datasets/{dataset_id}/items"
-    resp = requests.get(url, params=params, timeout=60)
+    resp = requests.get(url, params=params, timeout=120)
     if resp.status_code >= 400:
         raise ApifyError(f"Failed to fetch dataset {dataset_id}: {resp.text}")
     return resp.json()
 
 
+# ---------------------------
+# Google Search
+# ---------------------------
 def google_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
-    """
-    Uses apify/google-search-scraper to get organic results.
-    The actor variant in use expects `queries` as a *string* (newline-separated for many).
-    Returns list of {url, title, snippet, ...}
-    """
-    # Normalize limits
     results_per_page = max(1, min(max_results, 10))
-
-    # Primary schema: queries as a string
     input_body = {
-        "queries": query,                 # <-- IMPORTANT: string, not list
+        "queries": query,
         "maxPagesPerQuery": 1,
         "resultsPerPage": results_per_page,
         "includeUnfilteredResults": False,
     }
-
     try:
         run = start_actor(GOOGLE_ACTOR_ID, input_body)
-    except ApifyError as e:
-        err = str(e)
-        # Fallback 1: some builds expect "query" instead of "queries"
-        if "queries must be string" in err or "invalid-input" in err:
-            fallback_body = {
-                "query": query,
-                "maxPagesPerQuery": 1,
-                "resultsPerPage": results_per_page,
-                "includeUnfilteredResults": False,
-            }
-            run = start_actor(GOOGLE_ACTOR_ID, fallback_body)
-        else:
-            raise
+    except ApifyError:
+        fallback_body = {
+            "query": query,
+            "maxPagesPerQuery": 1,
+            "resultsPerPage": results_per_page,
+            "includeUnfilteredResults": False,
+        }
+        run = start_actor(GOOGLE_ACTOR_ID, fallback_body)
 
     run = wait_for_run_finished(run["id"], timeout_sec=120)
     if run.get("status") != "SUCCEEDED":
@@ -108,12 +117,8 @@ def google_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     ds_id = run.get("defaultDatasetId")
     items = dataset_items(ds_id, clean=True)
 
-    # Some versions return top-level items with url/title/snippet
-    # Others wrap results in item['organicResults']
-    results = []
-
+    results: List[Dict[str, Any]] = []
     for it in items:
-        # Preferred: organicResults array
         organic = it.get("organicResults")
         if isinstance(organic, list) and organic:
             for r in organic:
@@ -127,7 +132,6 @@ def google_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
                     })
             continue
 
-        # Fallback: flat item
         u = it.get("url")
         if u:
             results.append({
@@ -140,11 +144,12 @@ def google_search(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
     return results[:max_results]
 
 
-
+# ---------------------------
+# Web Scraper
+# ---------------------------
 def _default_page_function() -> str:
     return r"""
     async function pageFunction(context) {
-      // Runs inside page context
       const uniq = (arr) => Array.from(new Set((arr || []).filter(Boolean)));
       const metaContent = (sel) => {
         const el = document.querySelector(sel);
@@ -152,16 +157,13 @@ def _default_page_function() -> str:
       };
       const safeText = (el) => (el ? (el.textContent || '').trim() : '');
 
-      // --- 1) Body text (for plain emails + obfuscated "at/dot") ---
       let bodyText = '';
       try { bodyText = document.body ? (document.body.innerText || '') : ''; } catch (e) {}
 
       const plainEmails = (bodyText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(s => s.trim());
 
-      // Obfuscated forms: "name [at] domain [dot] com", "name (at) domain dot com"
       const obfus = [];
       const lowered = (bodyText || '').toLowerCase();
-      // capture sequences like: xxx at yyy dot tld
       const obfusRe = /([a-z0-9._%+-]+)\s*(\(|\[)?\s*at\s*(\)|\])?\s*([a-z0-9.-]+)\s*(\(|\[)?\s*dot\s*(\)|\])?\s*([a-z]{2,})/gi;
       let m;
       while ((m = obfusRe.exec(lowered)) !== null) {
@@ -169,7 +171,6 @@ def _default_page_function() -> str:
         obfus.push(email);
       }
 
-      // --- 2) mailto: and tel: anchors ---
       const emailsFromHref = [];
       const phones = [];
       try {
@@ -186,8 +187,6 @@ def _default_page_function() -> str:
         }
       } catch (_) {}
 
-      // --- 3) Cloudflare-protected emails (data-cfemail) ---
-      // https://developers.cloudflare.com/fundamentals/reference/cf-email/
       function cfDecode(cfhex) {
         try {
           const r = parseInt(cfhex.substr(0, 2), 16);
@@ -206,7 +205,6 @@ def _default_page_function() -> str:
           const dec = hex ? cfDecode(hex) : null;
           if (dec) cfEmails.push(dec);
         }
-        // Sometimes CF stores it in HTML comments or inline scripts, so scan HTML quickly
         const html = document.documentElement ? (document.documentElement.innerHTML || '') : '';
         const cfRe = /data-cfemail="([0-9a-fA-F]+)"/g;
         let mm;
@@ -216,13 +214,11 @@ def _default_page_function() -> str:
         }
       } catch (_) {}
 
-      // --- 4) LinkedIn links ---
       let linkedins = [];
       try {
         linkedins = Array.from(document.querySelectorAll('a[href*="linkedin.com"]')).map(a => a.href);
       } catch (_) {}
 
-      // --- 5) Title/site name + JSON-LD (rating, reviews, address, type, telephone) ---
       const title = safeText(document.querySelector('title'));
       const siteName = metaContent('meta[property="og:site_name"]') || metaContent('meta[property="og:title"]') || title;
 
@@ -263,7 +259,6 @@ def _default_page_function() -> str:
         }
       } catch (_) {}
 
-      // Compose emails (plain + obfuscated + cloudflare + mailto)
       const emails = uniq([].concat(plainEmails, obfus, cfEmails, emailsFromHref));
 
       return {
@@ -286,40 +281,32 @@ def _default_page_function() -> str:
 def web_scrape(urls: List[str], max_pages: int = 10) -> List[Dict[str, Any]]:
     if not urls:
         return []
-
     start_urls = [{"url": u} for u in urls]
-
     input_body = {
         "startUrls": start_urls,
         "maxRequestsPerCrawl": max_pages,
         "maxConcurrency": 1,
         "pageFunction": _default_page_function(),
-        "useChrome": True,              # PuppeteerCrawler (document is available)
+        "useChrome": True,
         "ignoreSslErrors": True,
         "downloadMedia": False,
         "downloadCss": False,
         "downloadJavascript": False,
         "maxRequestRetries": 1,
         "requestHandlerTimeoutSecs": 60,
-        # no injectJQuery needed; we don’t use $
     }
-
     run = start_actor(WEB_SCRAPER_ACTOR_ID, input_body)
     run = wait_for_run_finished(run["id"], timeout_sec=240)
     if run.get("status") != "SUCCEEDED":
         raise ApifyError(f"Web-scraper run failed: status={run.get('status')}")
     ds_id = run.get("defaultDatasetId")
-    return dataset_items(ds_id, clean=True)  # will include pageFunctionResult
+    return dataset_items(ds_id, clean=True)
 
+
+# ---------------------------
+# Google Maps enrichment
+# ---------------------------
 def google_maps_enrich(query: str) -> Dict[str, Any]:
-    """
-    Uses Google Maps scraper and NORMALIZES fields so downstream code can rely on:
-      rating, userRatingsTotal, phone, internationalPhoneNumber, website, city, country, address
-    Works with Compass actor output (totalScore/reviewsCount, phoneUnformatted, countryCode, etc.)
-    """
-    actor_id = os.getenv("GOOGLE_MAPS_ACTOR_ID", "compass~crawler-google-places")
-
-    # Try newer "searchStringsArray" input; fall back to "searchString"
     input_body = {
         "searchStringsArray": [query],
         "maxCrawledPlacesPerSearch": 1,
@@ -328,7 +315,7 @@ def google_maps_enrich(query: str) -> Dict[str, Any]:
         "maxImages": 0,
     }
     try:
-        run = start_actor(actor_id, input_body)
+        run = start_actor(GOOGLE_MAPS_ACTOR_ID, input_body)
     except ApifyError:
         fallback = {
             "searchString": query,
@@ -337,7 +324,7 @@ def google_maps_enrich(query: str) -> Dict[str, Any]:
             "maxReviews": 0,
             "maxImages": 0,
         }
-        run = start_actor(actor_id, fallback)
+        run = start_actor(GOOGLE_MAPS_ACTOR_ID, fallback)
 
     run = wait_for_run_finished(run["id"], timeout_sec=180)
     if run.get("status") != "SUCCEEDED":
@@ -349,27 +336,15 @@ def google_maps_enrich(query: str) -> Dict[str, Any]:
         return {}
 
     raw = items[0]
-
-    # ---- Normalize to common keys used by assemble_lead_record ----
-    normalized = {
-        # name / website
+    return {
         "name": raw.get("title") or raw.get("name"),
         "website": raw.get("website"),
-
-        # phones
-        "phone": raw.get("phone"),  # formatted (e.g., "+91 80 6723 2300")
+        "phone": raw.get("phone"),
         "internationalPhoneNumber": raw.get("phoneUnformatted") or raw.get("internationalPhoneNumber"),
-
-        # rating + reviews (Compass uses totalScore/reviewsCount)
         "rating": raw.get("rating") if raw.get("rating") is not None else raw.get("totalScore"),
         "userRatingsTotal": raw.get("userRatingsTotal") if raw.get("userRatingsTotal") is not None else raw.get("reviewsCount"),
-
-        # location
         "city": raw.get("city"),
-        # Compass gives ISO code; keep it if full country not present
         "country": raw.get("country") or raw.get("countryCode"),
-
-        # best-effort address object
         "address": {
             "street": raw.get("street"),
             "city": raw.get("city"),
@@ -377,8 +352,268 @@ def google_maps_enrich(query: str) -> Dict[str, Any]:
             "postal": raw.get("postalCode"),
             "country": raw.get("country") or raw.get("countryCode"),
         },
-
-        # keep original in case you need anything else later
         "_raw": raw,
     }
-    return normalized
+
+from urllib.parse import quote
+
+def build_sales_nav_company_url(industry: str, size_min: int, size_max: int, geo_ids: list[str]) -> str:
+    """
+    Builds a Sales Navigator company search URL:
+    - keywords: industry intent (e.g., hotel/resort/serviced apartment)
+    - companyHeadcountRanges: 50..5000
+    - geoIncluded: list of LinkedIn geo URNs (numbers as strings)
+    """
+    # Keywords: tune as you like
+    keywords_expr = '"hotel" OR "resort" OR "serviced apartment" OR "hospitality"'
+    if industry and industry.lower() not in keywords_expr.lower():
+        keywords_expr = f'{keywords_expr} OR "{industry}"'
+
+    # Encode pieces
+    kw = quote(keywords_expr, safe="")
+    headcount = f"List((start:{size_min},end:{size_max}))"
+    geos = "List(" + ",".join(geo_ids) + ")"
+
+    q = f"(keywords:{kw},companyHeadcountRanges:{headcount},geoIncluded:{geos})"
+    return "https://www.linkedin.com/sales/search/company?query=" + quote(q, safe="(),:")
+
+
+# =====================================================================
+# Sales Navigator actor wrapper (filters -> companies/contacts)
+# =====================================================================
+def _load_sales_nav_cookies_from_env() -> Any:
+    """
+    Load cookies for LinkedIn Sales Navigator from env.
+    Prefer SALES_NAV_COOKIES_JSON (JSON array of cookie objects).
+    Fallback to SALES_NAV_COOKIE_STRING (raw Cookie header string).
+    """
+    json_env = os.getenv("SALES_NAV_COOKIES_JSON", SALES_NAV_COOKIES_JSON) or ""
+    str_env = os.getenv("SALES_NAV_COOKIE_STRING", SALES_NAV_COOKIE_STRING) or ""
+
+    if json_env:
+        try:
+            parsed = json.loads(json_env)
+        except Exception:
+            raise ApifyError("SALES_NAV_COOKIES_JSON is not valid JSON.")
+        return parsed
+    if str_env:
+        return str_env.strip()
+    return None
+
+
+def _build_payload_variants(filters: Dict[str, Any], mode: str, cookies_payload: Any, search_url: str) -> List[Dict[str, Any]]:
+    """
+    Build payloads for multiple schemas the actor family uses:
+    - With "body": {...}
+    - Plain top-level keys (no wrapper)
+    - LinkedIn-ish synonyms
+    - URL modes (only if search_url provided)
+    """
+    size_min = int(filters.get("company_size_min") or 1)
+    size_max = int(filters.get("company_size_max") or 10_000_000)
+    industry = (filters.get("industry_focus") or "").strip()
+    countries = list(filters.get("countries") or [])
+    roles = list(filters.get("roles") or [])
+
+    variants: List[Dict[str, Any]] = []
+
+    # ---------- A) With "body" wrapper (your current shape) ----------
+    variants.append({
+        "body": {
+            "mode": mode,
+            "filters": {
+                "industry": industry,
+                "companySize": {"min": size_min, "max": size_max},
+                "countries": countries,
+                "roles": roles,
+            },
+            "includeContacts": True,
+            "deduplicate": True,
+            "cookies": cookies_payload,
+        }
+    })
+
+    variants.append({
+        "body": {
+            "mode": mode,
+            "industry": industry,
+            "companySize": {"min": size_min, "max": size_max},
+            "countries": countries,
+            "roles": roles,
+            "includeContacts": True,
+            "deduplicate": True,
+            "cookies": cookies_payload,
+        }
+    })
+
+    variants.append({
+        "body": {
+            "mode": mode,
+            "industries": [industry] if industry else [],
+            "companySizeRange": {"minEmployees": size_min, "maxEmployees": size_max},
+            "geos": countries,
+            "titles": roles,
+            "includeContacts": True,
+            "deduplicate": True,
+            "cookies": cookies_payload,
+        }
+    })
+
+    if "-via-url" in mode.lower() and search_url:
+        variants.append({
+            "body": {
+                "mode": mode,
+                "search_url": search_url,
+                "page": int(os.getenv("SALES_NAV_PAGE", "1")),
+                "cookies": cookies_payload,
+            }
+        })
+
+    # ---------- B) PLAIN top-level (NO "body" wrapper) ----------
+    variants.append({
+        "mode": mode,
+        "filters": {
+            "industry": industry,
+            "companySize": {"min": size_min, "max": size_max},
+            "countries": countries,
+            "roles": roles,
+        },
+        "includeContacts": True,
+        "deduplicate": True,
+        "cookies": cookies_payload,
+    })
+
+    variants.append({
+        "mode": mode,
+        "industry": industry,
+        "companySize": {"min": size_min, "max": size_max},
+        "countries": countries,
+        "roles": roles,
+        "includeContacts": True,
+        "deduplicate": True,
+        "cookies": cookies_payload,
+    })
+
+    variants.append({
+        "mode": mode,
+        "industries": [industry] if industry else [],
+        "companySizeRange": {"minEmployees": size_min, "maxEmployees": size_max},
+        "geos": countries,
+        "titles": roles,
+        "includeContacts": True,
+        "deduplicate": True,
+        "cookies": cookies_payload,
+    })
+
+    if "-via-url" in mode.lower() and search_url:
+        variants.append({
+            "mode": mode,
+            "search_url": search_url,
+            "page": int(os.getenv("SALES_NAV_PAGE", "1")),
+            "cookies": cookies_payload,
+        })
+
+    return variants
+
+def call_apify_actor(filters: Dict[str, Any], apify_token: Optional[str] = None) -> List[Dict[str, Any]]:
+    tok = _ensure_token(apify_token)
+
+    # Force URL mode for now
+    mode = "search-leads-via-url"  # or "search-companies-via-url" if you want company results
+    page = int(os.getenv("SALES_NAV_PAGE", "1"))
+
+    # Try to read a supplied URL
+    search_url = (os.getenv("SALES_NAV_SEARCH_URL", "") or "").strip()
+
+    # Basic validation: must be Sales Navigator and contain 'query='
+    def _looks_valid(u: str) -> bool:
+        return u.startswith("https://www.linkedin.com/sales/search/") and "query=" in u
+
+    # If URL missing/invalid, auto-build a Companies URL from filters (then still call URL mode)
+    if not _looks_valid(search_url):
+        size_min = int(filters.get("company_size_min") or 50)
+        size_max = int(filters.get("company_size_max") or 5000)
+        industry = (filters.get("industry_focus") or "Hospitality").strip()
+        countries = list(filters.get("countries") or [])
+        # You need to map countries → geo IDs; put your IDs here:
+        GEO_MAP = {
+            "United Kingdom": "101165590",
+            "Italy": "103350119",
+            "Spain": "105646813",
+            "Germany": "101282230",
+            "Switzerland": "106693272",
+        }
+        geo_ids = [GEO_MAP[c] for c in countries if c in GEO_MAP]
+        if not geo_ids:
+            raise ApifyError("No geo IDs derived from countries. Please select at least one supported country.")
+        search_url = build_sales_nav_company_url(industry, size_min, size_max, geo_ids)
+        # And use companies URL mode if we built a company URL:
+        mode = "search-companies-via-url"
+
+    cookies_payload = _load_sales_nav_cookies_from_env()
+    if not cookies_payload:
+        raise ApifyError("Sales Navigator cookies missing. Set SALES_NAV_COOKIES_JSON or SALES_NAV_COOKIE_STRING in .env.")
+
+    # The actor build you’re hitting expects top-level `"url"` and `"page"`
+    payload_plain = {
+        "mode": mode,
+        "url": search_url,
+        "page": page,
+        "cookies": cookies_payload,
+        "includeContacts": True,
+        "deduplicate": True,
+    }
+    payload_wrapped = {"body": dict(payload_plain)}  # fallback variant
+
+    last_err = None
+    for pv in (payload_plain, payload_wrapped):
+        try:
+            try:
+                run = start_actor(SALES_NAV_ACTOR_ID, pv, token=tok)
+            except ApifyError as e:
+                if "not found" in str(e).lower() or "invalid act id" in str(e).lower():
+                    run = start_actor(FALLBACK_SALES_NAV_ACTOR_ID, pv, token=tok)
+                else:
+                    raise
+            run = wait_for_run_finished(run["id"], timeout_sec=300, token=tok)
+            if run.get("status") != "SUCCEEDED":
+                last_err = ApifyError(f"Run status {run.get('status')}")
+                continue
+            dataset_id = run.get("defaultDatasetId")
+            if not dataset_id:
+                last_err = ApifyError("No defaultDatasetId in actor run response.")
+                continue
+            return dataset_items(dataset_id, clean=True, token=tok)
+        except ApifyError as e:
+            last_err = e
+            continue
+
+    raise ApifyError(f"Lead actor failed in URL mode. Last error: {last_err}")
+
+
+# ---------------------------
+# Optional: Local mock data
+# ---------------------------
+def mock_results(filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+    companies = [
+        {"companyName": "Premier Inns UK", "companySize": 3500, "country": "United Kingdom", "city": "London", "website": "https://www.premierinn.com", "companyLinkedinUrl": "https://www.linkedin.com/company/premier-inn/"},
+        {"companyName": "Meliá Hotels International", "companySize": 4500, "country": "Spain", "city": "Palma", "website": "https://www.melia.com", "companyLinkedinUrl": "https://www.linkedin.com/company/meliahotelsinternational/"},
+        {"companyName": "Deutsche Hospitality", "companySize": 1200, "country": "Germany", "city": "Frankfurt", "website": "https://www.deutschehospitality.com", "companyLinkedinUrl": "https://www.linkedin.com/company/deutsche-hospitality/"},
+        {"companyName": "Tivoli Hotels & Resorts", "companySize": 900, "country": "Portugal", "city": "Lisbon", "website": "https://www.tivolihotels.com", "companyLinkedinUrl": "https://www.linkedin.com/company/tivoli-hotels-resorts/"},
+        {"companyName": "B&B HOTELS", "companySize": 3000, "country": "Italy", "city": "Milan", "website": "https://www.hotel-bb.com", "companyLinkedinUrl": "https://www.linkedin.com/company/b-b-hotels/"},
+    ]
+    out: List[Dict[str, Any]] = []
+    size_min = int(filters.get("company_size_min", 1))
+    size_max = int(filters.get("company_size_max", 10_000_000))
+    countries = set(filters.get("countries", []))
+    roles = filters.get("roles", ["CEO"])
+    for c in companies:
+        if countries and c.get("country") not in countries:
+            continue
+        size = int(c.get("companySize") or 0)
+        if not (size_min <= size <= size_max):
+            continue
+        c2 = {**c}
+        c2["role"] = roles[0] if roles else None
+        out.append(c2)
+    return out

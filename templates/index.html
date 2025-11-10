@@ -9,24 +9,142 @@
 <body>
   <div class="container">
     <h1>Lead Finder</h1>
-    <p class="sub">Type a company / lead name. We’ll search, scrape and export a CSV.</p>
+    <p class="sub">Use either quick lookup (single company) or filtered lead search (bulk).</p>
 
-    <form id="lead-form">
-      <input id="query" type="text" placeholder="e.g., Taj Hotels" required />
-      <button type="submit">Find Lead</button>
-    </form>
+    <!-- 1) QUICK LOOKUP -->
+    <section class="card">
+      <h2>Quick Lookup (Single Company)</h2>
+      <p class="muted">Type a company name. We’ll search, scrape and export a JSON.</p>
 
-    <div id="status" class="status hidden">
-      <div class="spinner"></div>
-      <div class="msg">
-        <div id="status-line">Starting…</div>
-        <div class="tips" id="dynamic-tip"></div>
+      <form id="lead-form">
+        <input id="query" type="text" placeholder="e.g., Taj Hotels" required />
+        <button type="submit" class="btn primary">Find Lead</button>
+      </form>
+
+      <div id="status" class="status hidden">
+        <div class="spinner"></div>
+        <div class="msg">
+          <div id="status-line">Starting…</div>
+          <div class="tips" id="dynamic-tip"></div>
+        </div>
       </div>
-    </div>
 
-    <div id="result" class="result hidden"></div>
+      <div id="result" class="result hidden"></div>
+    </section>
+
+    <!-- 2) FILTERED LEAD SEARCH -->
+    <section class="card">
+      <h2>Filtered Lead Search</h2>
+      <p class="muted">Filter by industry, size, geography, and roles. Click <b>Search</b> to fetch leads. Download JSON when ready.</p>
+
+      <div class="grid-2">
+        <div>
+          <label for="industry">Industry Focus</label>
+          <select id="industry">
+            <option>Hospitality & Travel</option>
+            <option>Fintech</option>
+            <option>Healthcare</option>
+            <option>Pharmacy</option>
+          </select>
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="sizeMin">Company Size Min</label>
+            <input id="sizeMin" type="number" value="50" />
+          </div>
+          <div>
+            <label for="sizeMax">Company Size Max</label>
+            <input id="sizeMax" type="number" value="5000" />
+          </div>
+        </div>
+      </div>
+
+      <label>Countries</label>
+<div class="multiselect" id="countriesMulti">
+  <button type="button" class="select-toggle" id="countriesToggle">
+    <span id="countriesSummary">Select countries</span>
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z" fill="currentColor"/></svg>
+  </button>
+  <div class="select-panel" id="countriesPanel" aria-hidden="true">
+    <div class="check-grid">
+      <label><input type="checkbox" value="India"> India</label>
+      <label><input type="checkbox" value="United Kingdom"> United Kingdom</label>
+      <label><input type="checkbox" value="Italy"> Italy</label>
+      <label><input type="checkbox" value="Spain"> Spain</label>
+      <label><input type="checkbox" value="Germany"> Germany</label>
+      <label><input type="checkbox" value="Switzerland"> Switzerland</label>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" id="countriesAllBtn">Select all</button>
+      <button class="btn" type="button" id="countriesClearBtn">Clear</button>
+      <button class="btn primary" type="button" id="countriesDoneBtn">Done</button>
+    </div>
+  </div>
+</div>
+
+
+      <label for="roles">Target Roles</label>
+      <input id="roles" value="CEO, COO, Head of Operations, General Manager, GM" />
+
+      <div class="actions">
+        <button class="btn primary" onclick="runSearch()">Search</button>
+        <button class="btn" onclick="resetForm()">Reset</button>
+      </div>
+    </section>
+
+    <section class="card" id="results" style="display:none;">
+      <div id="meta"></div>
+      <div id="download"></div>
+      <div id="tableWrap"></div>
+    </section>
   </div>
 
   <script src="/static/app.js"></script>
+
+  <!-- keep the tiny inline script to handle the legacy quick lookup if you use it -->
+  <script>
+    const leadForm = document.getElementById('lead-form');
+    const statusBox = document.getElementById('status');
+    const statusLine = document.getElementById('status-line');
+    const resultBox = document.getElementById('result');
+
+    function show(el){ el.classList.remove('hidden'); }
+    function hide(el){ el.classList.add('hidden'); }
+
+    if (leadForm) {
+      leadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query').value.trim();
+        if (!query) return;
+
+        statusLine.textContent = 'Searching…';
+        show(statusBox);
+        hide(resultBox);
+
+        try {
+          const res = await fetch('/api/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query })
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          if (data.ok) {
+            statusLine.textContent = 'Done.';
+            show(resultBox);
+            resultBox.innerHTML = `<p><b>Download:</b> <a href="${data.json_path}">${data.json_path.split('/').pop()}</a></p>`;
+          } else {
+            throw new Error(data.error || 'Unknown error');
+          }
+        } catch (err) {
+          show(resultBox);
+          resultBox.innerHTML = `<p class="error">Error: ${err.message}</p>`;
+        } finally {
+          hide(statusBox);
+        }
+      });
+    }
+  </script>
 </body>
 </html>
