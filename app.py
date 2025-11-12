@@ -15,11 +15,12 @@ load_dotenv()
 # Imports
 # -----------------------------------------------------------------------------
 # New flow helpers (filters → Apify actor → normalize)
-from apify_client import call_apify_actor, mock_results, ApifyError  # ApifyError reused
+from custom_apify_client import call_apify_actor, mock_results, ApifyError  # ApifyError reused
 from extractors import assemble_lead_record, normalize_items  # assemble used by legacy
 
 # Legacy helpers (company query → Google → Scrape → Assemble)
-from apify_client import google_search, web_scrape, google_maps_enrich
+# These helpers are implemented in our local wrapper `custom_apify_client.py`.
+from custom_apify_client import google_search, web_scrape, google_maps_enrich
 
 # -----------------------------------------------------------------------------
 # App setup

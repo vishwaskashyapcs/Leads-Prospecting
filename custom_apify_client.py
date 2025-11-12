@@ -515,80 +515,91 @@ def _build_payload_variants(filters: Dict[str, Any], mode: str, cookies_payload:
 
     return variants
 
-def call_apify_actor(filters: Dict[str, Any], apify_token: Optional[str] = None) -> List[Dict[str, Any]]:
-    tok = _ensure_token(apify_token)
+from urllib.parse import quote
 
-    # Force URL mode for now
-    mode = "search-leads-via-url"  # or "search-companies-via-url" if you want company results
-    page = int(os.getenv("SALES_NAV_PAGE", "1"))
+def call_apify_actor(filters, apify_token):
+    """
+    Dynamically build a Sales Navigator URL and call Apify actor.
+    """
+    from apify_client import ApifyClient
+    import json
 
-    # Try to read a supplied URL
-    search_url = (os.getenv("SALES_NAV_SEARCH_URL", "") or "").strip()
+    try:
+        # Step 1️⃣ Build a clean base URL
+        base_url = "https://www.linkedin.com/sales/search/company"
 
-    # Basic validation: must be Sales Navigator and contain 'query='
-    def _looks_valid(u: str) -> bool:
-        return u.startswith("https://www.linkedin.com/sales/search/") and "query=" in u
+        # Step 2️⃣ Build LinkedIn-style query object
+        query_parts = []
 
-    # If URL missing/invalid, auto-build a Companies URL from filters (then still call URL mode)
-    if not _looks_valid(search_url):
-        size_min = int(filters.get("company_size_min") or 50)
-        size_max = int(filters.get("company_size_max") or 5000)
-        industry = (filters.get("industry_focus") or "Hospitality").strip()
-        countries = list(filters.get("countries") or [])
-        # You need to map countries → geo IDs; put your IDs here:
-        GEO_MAP = {
+        # Keywords (industry focus)
+        if filters.get("industry_focus"):
+            keywords = f'("{filters["industry_focus"]}" OR "hotel" OR "resort" OR "hospitality")'
+            query_parts.append(f"keywords:{keywords}")
+
+        # Roles
+        if filters.get("roles"):
+            roles = ",".join([f'"{r}"' for r in filters["roles"]])
+            query_parts.append(f"titleIncluded:List({roles})")
+
+        # Company size
+        if filters.get("company_size_min") and filters.get("company_size_max"):
+            query_parts.append(
+                f"companyHeadcountRanges:List((start:{filters['company_size_min']},end:{filters['company_size_max']}))"
+            )
+
+        # Geography (LinkedIn geo IDs)
+        geo_ids = {
             "United Kingdom": "101165590",
             "Italy": "103350119",
             "Spain": "105646813",
             "Germany": "101282230",
             "Switzerland": "106693272",
+            "United States": "103644278"
         }
-        geo_ids = [GEO_MAP[c] for c in countries if c in GEO_MAP]
-        if not geo_ids:
-            raise ApifyError("No geo IDs derived from countries. Please select at least one supported country.")
-        search_url = build_sales_nav_company_url(industry, size_min, size_max, geo_ids)
-        # And use companies URL mode if we built a company URL:
-        mode = "search-companies-via-url"
+        if filters.get("countries"):
+            ids = [geo_ids.get(c, "") for c in filters["countries"] if geo_ids.get(c)]
+            if ids:
+                query_parts.append(f"geoIncluded:List({','.join(ids)})")
 
-    cookies_payload = _load_sales_nav_cookies_from_env()
-    if not cookies_payload:
-        raise ApifyError("Sales Navigator cookies missing. Set SALES_NAV_COOKIES_JSON or SALES_NAV_COOKIE_STRING in .env.")
+        # Combine into LinkedIn query format
+        query_str = f"({', '.join(query_parts)})"
+        encoded_query = quote(query_str, safe="")
 
-    # The actor build you’re hitting expects top-level `"url"` and `"page"`
-    payload_plain = {
-        "mode": mode,
-        "url": search_url,
-        "page": page,
-        "cookies": cookies_payload,
-        "includeContacts": True,
-        "deduplicate": True,
-    }
-    payload_wrapped = {"body": dict(payload_plain)}  # fallback variant
+        # Optional session ID if you have one
+        session_id = "V+fhmkmqTlSofc8/1FmgJw=="  # Replace with your own or leave blank
 
-    last_err = None
-    for pv in (payload_plain, payload_wrapped):
-        try:
-            try:
-                run = start_actor(SALES_NAV_ACTOR_ID, pv, token=tok)
-            except ApifyError as e:
-                if "not found" in str(e).lower() or "invalid act id" in str(e).lower():
-                    run = start_actor(FALLBACK_SALES_NAV_ACTOR_ID, pv, token=tok)
-                else:
-                    raise
-            run = wait_for_run_finished(run["id"], timeout_sec=300, token=tok)
-            if run.get("status") != "SUCCEEDED":
-                last_err = ApifyError(f"Run status {run.get('status')}")
-                continue
-            dataset_id = run.get("defaultDatasetId")
-            if not dataset_id:
-                last_err = ApifyError("No defaultDatasetId in actor run response.")
-                continue
-            return dataset_items(dataset_id, clean=True, token=tok)
-        except ApifyError as e:
-            last_err = e
-            continue
+        # Final URL
+        sales_nav_url = f"{base_url}?query={encoded_query}&sessionId={session_id}"
 
-    raise ApifyError(f"Lead actor failed in URL mode. Last error: {last_err}")
+        print(f"[DEBUG] Generated Sales Navigator URL:\n{sales_nav_url}\n")
+
+        # Step 3️⃣ Prepare Apify call
+        client = ApifyClient(apify_token)
+
+        # Load cookies from env
+        cookies_json = os.getenv("SALES_NAV_COOKIES_JSON", "[]")
+        cookies = json.loads(cookies_json)
+
+        run_input = {
+            "body": {
+                "mode": "search-leads-via-url",
+                "url": sales_nav_url,
+                "page": 1,
+                "proxyConfig": {"useApifyProxy": True},
+                "cookies": cookies
+            }
+        }
+
+        print(f"[DEBUG] Sending actor input: {json.dumps(run_input, indent=2)}")
+
+        run = client.actor(os.getenv("SALES_NAV_ACTOR_ID")).call(run_input=run_input)
+
+        dataset_items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+        print(f"[DEBUG] Retrieved {len(dataset_items)} items")
+        return dataset_items
+
+    except Exception as e:
+        raise ApifyError(f"Failed to call Apify actor: {str(e)}")
 
 
 # ---------------------------
