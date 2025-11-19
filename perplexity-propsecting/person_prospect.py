@@ -2,10 +2,15 @@ import os
 import re
 import json
 import requests
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 load_dotenv()
+app = Flask(__name__)
 
+###############################################################################
+# ---------------------------- CORE FUNCTIONS -------------------------------
+###############################################################################
 
 def generate_company_prompt(industry, location, size_range,
                             revenue_range="$500K–$50M annual revenue (growth-stage or enterprise-level spenders)"):
@@ -35,7 +40,7 @@ Geography:
 
     instructions = """
 TASK:
-List exactly 10 verified companies that satisfy ALL criteria above.
+List exactly 5 verified companies that satisfy ALL criteria above.
 
 REQUIRED FIELDS FOR EACH COMPANY:
 1. Company Name
@@ -60,15 +65,12 @@ OUTPUT FORMAT:
 
 def query_groq(prompt, model="llama-3.1-8b-instant", temperature=0.1, max_tokens=1500):
     api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise EnvironmentError("Missing GROQ_API_KEY")
-
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
     payload = {
         "model": model,
         "messages": [
-            {"role": "system",
-             "content": "You are a precise B2B research assistant who never invents data."},
+            {"role": "system", "content": "You are a precise B2B research assistant who never invents data."},
             {"role": "user", "content": prompt}
         ],
         "temperature": temperature,
@@ -116,52 +118,38 @@ def parse_companies(text):
 
 
 def validate_companies(companies):
-    valid, rejected = [], []
+    valid = []
     for c in companies:
         try:
             emp = int(re.sub(r"[^\d]", "", c["employees"].split("-")[0]))
             rev = float(re.sub(r"[^\d.]", "", c["revenue"]))
+            if 100 <= emp <= 5000 and 0.5 <= rev <= 50:
+                valid.append(c)
         except:
-            rejected.append(c)
             continue
-
-        if 100 <= emp <= 5000 and 0.5 <= rev <= 50:
-            valid.append(c)
-        else:
-            rejected.append(c)
-    return valid, rejected
+    return valid
 
 
 ROLE_FILTERS = [
-    "CIO", "CTO", "VP Engineering", "VP of Engineering",
-    "Director Delivery", "Head of PMO", "Chief Transformation Officer",
-    "Chief Digital Officer", "IT Director", "Technology Director"
+    "CIO", "CTO", "VP Engineering", "VP of Engineering", "Director Delivery",
+    "Head of PMO", "Chief Transformation Officer", "Chief Digital Officer",
+    "IT Director", "Technology Director"
 ]
+
 
 def fetch_contacts_from_serpapi(company_name):
     serp_key = os.getenv("SERPAPI_KEY")
-    if not serp_key:
-        raise EnvironmentError("Missing SERPAPI_KEY")
-
     role_query = " OR ".join([f'"{r}"' for r in ROLE_FILTERS])
     q = f"\"{company_name}\" {role_query} site:linkedin.com/in"
 
-    params = {
-        "engine": "google",
-        "q": q,
-        "num": 10,
-        "api_key": serp_key
-    }
-
+    params = {"engine": "google", "q": q, "num": 10, "api_key": serp_key}
     r = requests.get("https://serpapi.com/search.json", params=params, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def parse_contacts(serp_json):
-    contacts = []
     results = serp_json.get("organic_results", [])
-
     for r in results:
         link = r.get("link", "")
         if "linkedin.com/in" not in link:
@@ -170,85 +158,66 @@ def parse_contacts(serp_json):
         title = r.get("title", "")
         name = title.split(" – ")[0].strip()
         role = title.split(" – ")[1].strip() if " – " in title else r.get("snippet", "")
-
-        contacts.append({
-            "name": name,
-            "role": role,
-            "linkedin": link
-        })
-
-    return contacts
+        return [{"name": name, "role": role, "linkedin": link}]  # return only 1
+    return []
 
 
+###############################################################################
+# ----------------------------- FLASK ROUTES ---------------------------------
+###############################################################################
 
-if __name__ == "__main__":
-    prompt = generate_company_prompt(
-        industry="Technology & IT Services",
-        location="France",
-        size_range="100–5000 employees"
-    )
+@app.get("/discover-companies")
+def discover_companies():
+    industry = request.args.get("industry", "Technology & IT Services")
+    location = request.args.get("location", "France")
+    size_range = request.args.get("size_range", "100–5000 employees")
 
-    print("\n🔍 Querying Groq AI...")
+    prompt = generate_company_prompt(industry, location, size_range)
     groq_output = query_groq(prompt)
-    companies = parse_companies(groq_output)
-    valid, rejected = validate_companies(companies)
+    companies = validate_companies(parse_companies(groq_output))
 
-    print(f"\n🏢 Valid Companies Found: {len(valid)}")
+    return jsonify({"companies": companies})
 
-    # 🆕 print all companies to console
-    print("\n📌 Companies retrieved from Groq:")
-    for idx, c in enumerate(valid, start=1):
-        print(f"{idx}. {c['company']}")
 
-    final_output = []   # 🆕 this will store required format
+@app.post("/generate-prospects")
+def generate_prospects():
+    data = request.json
+    industry = data.get("industry", "Technology & IT Services")
+    location = data.get("location", "France")
+    size_range = data.get("size_range", "100–5000 employees")
 
-    for comp in valid:
-        company_name = comp["company"]
-        print(f"\n🔎 Fetching contacts for: {company_name}...")
+    prompt = generate_company_prompt(industry, location, size_range)
+    groq_output = query_groq(prompt)
+    companies = validate_companies(parse_companies(groq_output))
 
+    final_output = []
+
+    for comp in companies:
         try:
-            serp_json = fetch_contacts_from_serpapi(company_name)
-
-            # 🔥 PRINT FULL SERP OUTPUT FOR DEBUGGING
-            print("\n🟦 RAW SERPAPI OUTPUT:")
-            print(json.dumps(serp_json, indent=2, ensure_ascii=False))
-
+            serp_json = fetch_contacts_from_serpapi(comp["company"])
             contacts = parse_contacts(serp_json)
-            contacts = contacts[:1]
-
-        except Exception as e:
-            print(f"   ❌ Failed -> {e}")
+        except:
             contacts = []
 
-        final_output.append({
-            "company": {
-                "company": comp["company"],
-                "website": comp["website"],
-                "revenue": comp["revenue"],
-                "employees": comp["employees"],
-                "headquarters": comp["headquarters"],
-                "verified_source": comp["source"]
-            },
-            "people": contacts
-        })
+        final_output.append({"company": comp, "people": contacts})
 
-        print(f"   ✓ Added {len(contacts)} people")
-
-
-    with open("company_contacts.json", "w", encoding="utf-8") as f:
+    # Save JSON output
+    os.makedirs("output", exist_ok=True)
+    output_file = "output/company_contacts.json"
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(final_output, f, indent=2, ensure_ascii=False)
 
-#     with open("company_contacts.json", "w", encoding="utf-8") as f:
-#    # 📁 ensure output folder exists
-#         output_dir = "output"
-#         os.makedirs(output_dir, exist_ok=True)
-#         output_file = os.path.join(output_dir, "company_contacts.json")
+    return jsonify({
+        "message": "Success",
+        "records": len(final_output),
+        "output_file": output_file,
+        "data": final_output
+    })
 
-#         with open(output_file, "w", encoding="utf-8") as f:
-#             json.dump(final_output, f, indent=2, ensure_ascii=False)
 
-#         print(f"\n🎉 DONE — Exported → {output_file}")
+###############################################################################
+# ----------------------------- APP STARTER ----------------------------------
+###############################################################################
 
-    
-
-    print("\n🎉 DONE — Exported → company_contacts.json")
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

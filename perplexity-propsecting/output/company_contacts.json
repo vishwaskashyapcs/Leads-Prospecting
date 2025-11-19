@@ -1,0 +1,87 @@
+[
+  {
+    "company": {
+      "company": "Kuzzle",
+      "website": "https://kuzzle.io/",
+      "revenue": "10M",
+      "employees": "100-200",
+      "headquarters": "Paris, France",
+      "verified_source": "Crunchbase"
+    },
+    "people": [
+      {
+        "name": "gilles guirand - CTO @ Kaliop.com",
+        "role": "Expérience ; Chief Technology Officer. Kaliop. sept. 2001 - aujourd'hui 24 ans 3 mois ; CTO. Kuzzle. janv. 2015 - déc. 2023 9 ans ; Board member, eZ Publish ...",
+        "linkedin": "https://fr.linkedin.com/in/gillesguirand"
+      }
+    ]
+  },
+  {
+    "company": {
+      "company": "Clever Cloud",
+      "website": "https://www.clever-cloud.com/",
+      "revenue": "20M",
+      "employees": "200-500",
+      "headquarters": "Paris, France",
+      "verified_source": "Crunchbase"
+    },
+    "people": [
+      {
+        "name": "Julien Durillon🔸 - VP of Engineering",
+        "role": "Expérience. Graphique Clever Cloud. VP of Engineering. Clever Cloud. sept. 2010 - aujourd'hui 15 ans 3 mois. Ville de Paris, Île-de-France, France. Development ...",
+        "linkedin": "https://fr.linkedin.com/in/julien-durillon%F0%9F%94%B8-92745520"
+      }
+    ]
+  },
+  {
+    "company": {
+      "company": "SensioLabs",
+      "website": "https://sensiolabs.com/",
+      "revenue": "15M",
+      "employees": "100-200",
+      "headquarters": "Paris, France",
+      "verified_source": "Crunchbase"
+    },
+    "people": [
+      {
+        "name": "Andreas Hucks - OPEN Software Consulting",
+        "role": "OPEN Digitalgruppe Grafik. Head of Software Engineering and Consulting · QOSSMIC Grafik. CTO · CTO. SensioLabs Deutschland GmbH · Owner. Andreas Hucks ...",
+        "linkedin": "https://de.linkedin.com/in/andeashucks"
+      }
+    ]
+  },
+  {
+    "company": {
+      "company": "Netguru",
+      "website": "https://www.netguru.com/",
+      "revenue": "25M",
+      "employees": "200-500",
+      "headquarters": "Paris, France",
+      "verified_source": "Crunchbase"
+    },
+    "people": [
+      {
+        "name": "Aleksander Cichowicz - Netguru",
+        "role": "I'm an Engineering Lead and former CTO with over 15 years of experience spanning software… · Experience: Netguru · Education: Zachodniopomorski Uniwersytet ...",
+        "linkedin": "https://pl.linkedin.com/in/acichowicz/en"
+      }
+    ]
+  },
+  {
+    "company": {
+      "company": "Axway",
+      "website": "https://www.axway.com/",
+      "revenue": "40M",
+      "employees": "1000-2000",
+      "headquarters": "Paris, France",
+      "verified_source": "Crunchbase"
+    },
+    "people": [
+      {
+        "name": "Meetesh Patel - Chief Product Officer @ Axway",
+        "role": "Chief Product Officer @ Axway · Passionate leader and technologist driving customer and technical success, through innovation and disruption of the status ...",
+        "linkedin": "https://www.linkedin.com/in/meeteshpat"
+      }
+    ]
+  }
+]

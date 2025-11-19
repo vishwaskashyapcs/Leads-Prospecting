@@ -1,6 +1,4 @@
-// ==========================
-// Legacy quick lookup (/api/run)
-// ==========================
+
 const form = document.getElementById("lead-form");
 const statusBox = document.getElementById("status");
 const statusLine = document.getElementById("status-line");
