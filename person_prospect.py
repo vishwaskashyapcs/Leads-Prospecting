@@ -180,73 +180,13 @@ def parse_contacts(serp_json):
     return contacts
 
 
-
 if __name__ == "__main__":
+    # Optional for testing only — not used by Flask
     prompt = generate_company_prompt(
         industry="Technology & IT Services",
         location="France",
         size_range="100–5000 employees"
     )
-
-    print("\n🔍 Querying Groq AI...")
     groq_output = query_groq(prompt)
-    companies = parse_companies(groq_output)
-    valid, rejected = validate_companies(companies)
-
-    print(f"\n🏢 Valid Companies Found: {len(valid)}")
-
-    # 🆕 print all companies to console
-    print("\n📌 Companies retrieved from Groq:")
-    for idx, c in enumerate(valid, start=1):
-        print(f"{idx}. {c['company']}")
-
-    final_output = []   # 🆕 this will store required format
-
-    for comp in valid:
-        company_name = comp["company"]
-        print(f"\n🔎 Fetching contacts for: {company_name}...")
-
-        try:
-            serp_json = fetch_contacts_from_serpapi(company_name)
-
-
-            # print(json.dumps(serp_json, indent=2, ensure_ascii=False))
-
-            contacts = parse_contacts(serp_json)
-            contacts = contacts[:1]
-
-        except Exception as e:
-            print(f"   ❌ Failed -> {e}")
-            contacts = []
-
-        final_output.append({
-            "company": {
-                "company": comp["company"],
-                "website": comp["website"],
-                "revenue": comp["revenue"],
-                "employees": comp["employees"],
-                "headquarters": comp["headquarters"],
-                "verified_source": comp["source"]
-            },
-            "people": contacts
-        })
-
-        print(f"   ✓ Added {len(contacts)} people")
-
-
-    # with open("company_contacts.json", "w", encoding="utf-8") as f:
-    #     json.dump(final_output, f, indent=2, ensure_ascii=False)
-
-  # 📁 ensure output folder exists
-    output_dir = "output"
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, "company_contacts.json")
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(final_output, f, indent=2, ensure_ascii=False)
-
-print(f"\n🎉 DONE — Exported → {output_file}")
-
-
-    
-
+    companies = validate_companies(parse_companies(groq_output))
+    print(json.dumps(companies, indent=2))

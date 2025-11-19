@@ -18,8 +18,8 @@
   },
   {
     "company": {
-      "company": "Clever Cloud",
-      "website": "https://www.clever-cloud.com/",
+      "company": "Sensedia",
+      "website": "https://www.sensedia.com/",
       "revenue": "20M",
       "employees": "200-500",
       "headquarters": "Paris, France",
@@ -27,60 +27,43 @@
     },
     "people": [
       {
-        "name": "Julien Durillon🔸 - VP of Engineering",
-        "role": "Expérience. Graphique Clever Cloud. VP of Engineering. Clever Cloud. sept. 2010 - aujourd'hui 15 ans 3 mois. Ville de Paris, Île-de-France, France. Development ...",
-        "linkedin": "https://fr.linkedin.com/in/julien-durillon%F0%9F%94%B8-92745520"
+        "name": "Daniel Rodrigues - Sensedia",
+        "role": "Witℎ more tℎan sixteen years working witℎ people… · Experiência: Sensedia · Formação acadêmica: Escola Nacional de Seguros · Localidade: Rio de Janeiro · + ...",
+        "linkedin": "https://br.linkedin.com/in/rodrigues-daniel-it"
       }
     ]
   },
   {
     "company": {
-      "company": "SensioLabs",
-      "website": "https://sensiolabs.com/",
+      "company": "Clever Age",
+      "website": "https://www.clever-age.com/",
       "revenue": "15M",
-      "employees": "100-200",
-      "headquarters": "Paris, France",
-      "verified_source": "Crunchbase"
-    },
-    "people": [
-      {
-        "name": "Andreas Hucks - OPEN Software Consulting",
-        "role": "OPEN Digitalgruppe Grafik. Head of Software Engineering and Consulting · QOSSMIC Grafik. CTO · CTO. SensioLabs Deutschland GmbH · Owner. Andreas Hucks ...",
-        "linkedin": "https://de.linkedin.com/in/andeashucks"
-      }
-    ]
-  },
-  {
-    "company": {
-      "company": "Netguru",
-      "website": "https://www.netguru.com/",
-      "revenue": "25M",
       "employees": "200-500",
       "headquarters": "Paris, France",
-      "verified_source": "Crunchbase"
+      "verified_source": "LinkedIn"
     },
     "people": [
       {
-        "name": "Aleksander Cichowicz - Netguru",
-        "role": "I'm an Engineering Lead and former CTO with over 15 years of experience spanning software… · Experience: Netguru · Education: Zachodniopomorski Uniwersytet ...",
-        "linkedin": "https://pl.linkedin.com/in/acichowicz/en"
+        "name": "Jacques Leroux - Clever Age",
+        "role": "Depuis 10 ans, j'accompagne mes clients à créer et à opérer leur services web en tant que… · Expérience : Clever Age · Formation : EPITA · Lieu : Paris et ...",
+        "linkedin": "https://fr.linkedin.com/in/jacques-leroux-713aba8"
       }
     ]
   },
   {
     "company": {
-      "company": "Axway",
-      "website": "https://www.axway.com/",
-      "revenue": "40M",
+      "company": "Axians",
+      "website": "https://www.axians.com/",
+      "revenue": "30M",
       "employees": "1000-2000",
       "headquarters": "Paris, France",
-      "verified_source": "Crunchbase"
+      "verified_source": "LinkedIn"
     },
     "people": [
       {
-        "name": "Meetesh Patel - Chief Product Officer @ Axway",
-        "role": "Chief Product Officer @ Axway · Passionate leader and technologist driving customer and technical success, through innovation and disruption of the status ...",
-        "linkedin": "https://www.linkedin.com/in/meeteshpat"
+        "name": "Chris Gilmour - CTO at Axians UK",
+        "role": "CTO at Axians UK · Experienced CTO with over 20 years' working in the networking industry, the majority of which within International Tier 1 ISP's and award ...",
+        "linkedin": "https://uk.linkedin.com/in/cgilmour"
       }
     ]
   }

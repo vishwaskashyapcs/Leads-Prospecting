@@ -1,264 +1,275 @@
+// DOM Elements
+const industryEl = document.getElementById("industry");
+const sizeMinEl = document.getElementById("sizeMin");
+const sizeMaxEl = document.getElementById("sizeMax");
+const rolesEl = document.getElementById("roles");
+const searchBtn = document.getElementById("searchBtn");
+const resetBtn = document.getElementById("resetBtn");
 
-const form = document.getElementById("lead-form");
-const statusBox = document.getElementById("status");
-const statusLine = document.getElementById("status-line");
-const resultBox = document.getElementById("result");
-const tipEl = document.getElementById("dynamic-tip");
+const countriesToggle = document.getElementById("countriesToggle");
+const countriesPanel = document.getElementById("countriesPanel");
+const countriesSummary = document.getElementById("countriesSummary");
+const countriesAllBtn = document.getElementById("countriesAllBtn");
+const countriesClearBtn = document.getElementById("countriesClearBtn");
+const countriesDoneBtn = document.getElementById("countriesDoneBtn");
 
-const tips = [
-  "Searching Google…",
-  "Picking the official website…",
-  "Crawling pages for emails, phones, LinkedIn…",
-  "Parsing ratings and address from JSON-LD…",
-  "Normalizing to your schema…",
-  "Saving your JSON file…",
-];
-
-let tipIdx = 0;
-let tipTimer = null;
-
-function startTips() {
-  if (!tipEl) return;
-  tipIdx = 0;
-  tipEl.textContent = tips[tipIdx];
-  tipTimer = setInterval(() => {
-    tipIdx = (tipIdx + 1) % tips.length;
-    tipEl.textContent = tips[tipIdx];
-  }, 1200);
-}
-
-function stopTips() {
-  if (tipTimer) { clearInterval(tipTimer); tipTimer = null; }
-}
-
-if (form) {
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (resultBox) resultBox.classList.add("hidden");
-    if (statusBox) statusBox.classList.remove("hidden");
-    if (statusLine) statusLine.textContent = "Working… please wait.";
-    startTips();
-
-    const queryEl = document.getElementById("query");
-    const query = queryEl ? queryEl.value.trim() : "";
-
-    try {
-      const resp = await fetch("/api/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
-      });
-      const data = await resp.json();
-      stopTips();
-
-      if (!data.ok) {
-        if (statusLine) statusLine.textContent = "Something went wrong.";
-        if (resultBox) {
-          resultBox.classList.remove("hidden");
-          resultBox.innerHTML = `<div>⚠️ ${data.error || "Unknown error"}</div>`;
-        }
-        return;
-      }
-
-      if (statusBox) statusBox.classList.add("hidden");
-      if (resultBox) {
-        resultBox.classList.remove("hidden");
-        resultBox.innerHTML = `
-          <div>✅ Done! Download your JSON:
-            <a href="${data.json_path}">Download</a>
-          </div>
-        `;
-      }
-    } catch (err) {
-      stopTips();
-      if (statusLine) statusLine.textContent = "Error calling backend.";
-      if (resultBox) {
-        resultBox.classList.remove("hidden");
-        resultBox.innerHTML = `<div>⚠️ ${err.message}</div>`;
-      }
-    }
-  });
-}
-
-// ==========================
-// Multi-select dropdown (Countries)
-// ==========================
-const countriesToggle = document.getElementById('countriesToggle');
-const countriesPanel  = document.getElementById('countriesPanel');
-const countriesSummary = document.getElementById('countriesSummary');
-const countriesAllBtn = document.getElementById('countriesAllBtn');
-const countriesClearBtn = document.getElementById('countriesClearBtn');
-const countriesDoneBtn = document.getElementById('countriesDoneBtn');
-
-function getCountryCheckboxes() {
-  return countriesPanel ? Array.from(countriesPanel.querySelectorAll('input[type="checkbox"]')) : [];
-}
-
-function getSelectedCountries() {
-  return getCountryCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
-}
-
-function setSelectedCountries(values) {
-  const set = new Set(values || []);
-  getCountryCheckboxes().forEach(cb => { cb.checked = set.has(cb.value); });
-  updateCountriesSummary();
-}
-
-function updateCountriesSummary() {
-  if (!countriesSummary) return;
-  const vals = getSelectedCountries();
-  countriesSummary.textContent = vals.length ? vals.join(', ') : 'Select countries';
-}
-
-function openCountriesPanel() {
-  if (!countriesPanel) return;
-  countriesPanel.classList.add('open');
-  countriesPanel.setAttribute('aria-hidden', 'false');
-}
-
-function closeCountriesPanel() {
-  if (!countriesPanel) return;
-  countriesPanel.classList.remove('open');
-  countriesPanel.setAttribute('aria-hidden', 'true');
-}
-
-// Toggle open/close
-if (countriesToggle && countriesPanel) {
-  countriesToggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = countriesPanel.classList.contains('open');
-    if (isOpen) closeCountriesPanel(); else openCountriesPanel();
-  });
-
-  // Update summary on any checkbox change
-  countriesPanel.addEventListener('change', (e) => {
-    if (e.target && e.target.matches('input[type="checkbox"]')) {
-      updateCountriesSummary();
-    }
-  });
-}
-
-// Click outside to close
-document.addEventListener('click', (e) => {
-  if (!countriesPanel || !countriesToggle) return;
-  if (!countriesPanel.classList.contains('open')) return;
-  const withinPanel = countriesPanel.contains(e.target);
-  const withinButton = countriesToggle.contains(e.target);
-  if (!withinPanel && !withinButton) closeCountriesPanel();
-});
-
-// Buttons inside panel
-if (countriesAllBtn) {
-  countriesAllBtn.addEventListener('click', () => {
-    getCountryCheckboxes().forEach(cb => cb.checked = true);
-    updateCountriesSummary();
-  });
-}
-if (countriesClearBtn) {
-  countriesClearBtn.addEventListener('click', () => {
-    getCountryCheckboxes().forEach(cb => cb.checked = false);
-    updateCountriesSummary();
-  });
-}
-if (countriesDoneBtn) {
-  countriesDoneBtn.addEventListener('click', () => {
-    updateCountriesSummary();   // ensure summary reflects latest
-    closeCountriesPanel();
-  });
-}
-
-// Initial summary text
-updateCountriesSummary();
-
-// ==========================
-// Filtered lead search (/api/leads/search)
-// ==========================
 const resultsCard = document.getElementById("results");
 const metaEl = document.getElementById("meta");
 const downloadEl = document.getElementById("download");
 const tableWrap = document.getElementById("tableWrap");
 
-window.runSearch = async function runSearch() {
-  const industryEl = document.getElementById('industry');
-  const sizeMinEl  = document.getElementById('sizeMin');
-  const sizeMaxEl  = document.getElementById('sizeMax');
-  const rolesEl    = document.getElementById('roles');
+let latestCompanies = [];
 
-  if (!industryEl || !sizeMinEl || !sizeMaxEl || !rolesEl) {
-    alert("Missing one or more filter inputs on the page.");
-    return;
-  }
 
-  const industry = industryEl.value;
-  const sizeMin  = parseInt(sizeMinEl.value, 10);
-  const sizeMax  = parseInt(sizeMaxEl.value, 10);
-  const countries = getSelectedCountries();
-  const roles = rolesEl.value.split(',').map(s => s.trim()).filter(Boolean);
+// ------------------ Countries Dropdown Logic ------------------
+function getCountryCheckboxes() {
+  return countriesPanel ? Array.from(countriesPanel.querySelectorAll('input[type="checkbox"]')) : [];
+}
+function getSelectedCountries() {
+  return getCountryCheckboxes().filter(cb => cb.checked).map(cb => cb.value);
+}
+function setSelectedCountries(values) {
+  const set = new Set(values || []);
+  getCountryCheckboxes().forEach(cb => (cb.checked = set.has(cb.value)));
+  updateCountriesSummary();
+}
+function updateCountriesSummary() {
+  if (!countriesSummary) return;
+  const vals = getSelectedCountries();
+  countriesSummary.textContent = vals.length ? vals.join(", ") : "Select countries";
+}
+function openCountriesPanel() { countriesPanel?.classList.add("open"); }
+function closeCountriesPanel() { countriesPanel?.classList.remove("open"); }
 
-  if (!countries.length) {
-    alert('Please select at least one country.');
-    return;
-  }
+countriesToggle?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  countriesPanel.classList.contains("open") ? closeCountriesPanel() : openCountriesPanel();
+});
+document.addEventListener("click", (e) => {
+  if (!countriesPanel?.classList.contains("open")) return;
+  if (!countriesPanel.contains(e.target) && !countriesToggle.contains(e.target)) closeCountriesPanel();
+});
+countriesPanel?.addEventListener("change", updateCountriesSummary);
+countriesAllBtn?.addEventListener("click", () => { getCountryCheckboxes().forEach(cb => (cb.checked = true)); updateCountriesSummary(); });
+countriesClearBtn?.addEventListener("click", () => { getCountryCheckboxes().forEach(cb => (cb.checked = false)); updateCountriesSummary(); });
+countriesDoneBtn?.addEventListener("click", () => { updateCountriesSummary(); closeCountriesPanel(); });
+updateCountriesSummary();
 
+
+// ------------------ Lead Search Logic ------------------
+async function runSearch() {
   const payload = {
-    industry_focus: industry,
-    company_size_min: sizeMin,
-    company_size_max: sizeMax,
-    countries,
-    roles
+    industry_focus: industryEl.value,
+    company_size_min: parseInt(sizeMinEl.value, 10),
+    company_size_max: parseInt(sizeMaxEl.value, 10),
+    countries: getSelectedCountries(),
+    roles: rolesEl.value.split(",").map(s => s.trim()).filter(Boolean)
   };
 
+  if (!payload.countries.length) {
+    alert("Please select at least one country.");
+    return;
+  }
+
+  resultsCard.style.display = "none";
+  metaEl.innerHTML = "";
+  downloadEl.innerHTML = "";
+  tableWrap.innerHTML = "Searching...";
+
   try {
-    const res = await fetch('/api/leads/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/leads/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) throw new Error(data.error || "Lead search failed");
+
+    const items = data.items || [];
+    const rejected = typeof data.rejected_count === "number" ? data.rejected_count : 0;
+    const metaParts = [`<p><b>Total:</b> ${items.length}</p>`];
+    if (rejected) metaParts.push(`<p><b>Rejected:</b> ${rejected}</p>`);
+
+    resultsCard.style.display = "block";
+    metaEl.innerHTML = metaParts.join("");
+    downloadEl.innerHTML = data.download_url ? `<a href="${data.download_url}">Download JSON</a>` : "";
+
+    buildCompaniesTable(items);
+  } catch (err) {
+    resultsCard.style.display = "block";
+    tableWrap.innerHTML = `<div>Error: ${err.message}</div>`;
+  }
+}
+
+
+// ------------------ Build table with Find Lead button ------------------
+function buildCompaniesTable(items = []) {
+  latestCompanies = Array.isArray(items) ? [...items] : [];
+
+  if (!latestCompanies.length) {
+    tableWrap.innerHTML = "<div>No companies found.</div>";
+    return;
+  }
+
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Size</th>
+          <th>City</th>
+          <th>Country</th>
+          <th>Website</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  latestCompanies.forEach((c, idx) => {
+    const companyName = c?.company_name || "N/A";
+    const companySize = c?.company_size || "N/A";
+    const city = c?.city || "N/A";
+    const country = c?.country || "N/A";
+    const websiteDisplay = c?.website
+      ? `<a href="${c.website}" target="_blank" rel="noopener">${c.website}</a>`
+      : "N/A";
+
+    html += `
+      <tr id="row-${idx}">
+        <td>${companyName}</td>
+        <td>${companySize}</td>
+        <td>${city}</td>
+        <td>${country}</td>
+        <td>${websiteDisplay}</td>
+        <td class="actions-cell">
+          <button class="btn" onclick="enrichCompany(${idx})">Enrich</button>
+          <button class="btn primary" onclick="findLead(${idx})">Find Lead</button>
+        </td>
+      </tr>
+      <tr id="enrich-${idx}" style="display:none;">
+        <td colspan="6" class="lead-box">Preparing enrichment...</td>
+      </tr>
+      <tr id="lead-${idx}" style="display:none;">
+        <td colspan="6" class="lead-box">Fetching lead...</td>
+      </tr>
+    `;
+  });
+
+  html += "</tbody></table>";
+  tableWrap.innerHTML = html;
+}
+
+
+// ------------------ Find Lead flow (SERP + LinkedIn) ------------------
+async function findLead(idx) {
+  const company = latestCompanies[idx];
+  const companyName = company?.company_name || "N/A";
+  const box = document.getElementById(`lead-${idx}`);
+  if (!company || !box) return;
+
+  box.style.display = "table-row";
+  box.innerHTML = `<td colspan="6">Searching LinkedIn for ${companyName}...</td>`;
+
+  try {
+    const res = await fetch("/api/company/find-lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_name: companyName }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Lead lookup failed");
+
+    const people = Array.isArray(data.people) ? data.people : [];
+    if (!people.length) {
+      box.innerHTML = `<td colspan="6">No person found.</td>`;
+      return;
+    }
+
+    const p = people[0];
+    const linkedin = p.linkedin
+      ? `<a href="${p.linkedin}" target="_blank" rel="noopener">${p.linkedin}</a>`
+      : "LinkedIn unavailable";
+
+    box.innerHTML = `
+      <td colspan="6">
+        <div><strong>${p.name || "Unknown contact"}</strong></div>
+        <div>${p.role || "Role unavailable"}</div>
+        <div>${linkedin}</div>
+      </td>
+    `;
+
+  } catch (err) {
+    box.innerHTML = `<td colspan="6">Error: ${err.message}</td>`;
+  }
+}
+
+
+async function enrichCompany(idx) {
+  const company = latestCompanies[idx];
+  const companyName = company?.company_name || "N/A";
+  const website = company?.website || "";
+  const box = document.getElementById(`enrich-${idx}`);
+  if (!company || !box) return;
+
+  box.style.display = "table-row";
+  box.innerHTML = `<td colspan="6">Enriching ${companyName}...</td>`;
+
+  try {
+    const payload = { company_name: companyName };
+    if (website) payload.website = website;
+
+    const res = await fetch("/api/company/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(t || 'Request failed');
-    }
-
     const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Enrichment failed");
 
-    if (resultsCard) resultsCard.style.display = 'block';
-    if (metaEl) metaEl.innerHTML = `<p><b>Total:</b> ${data.total} &nbsp; <b>Request ID:</b> ${data.request_id}</p>`;
-    if (downloadEl) downloadEl.innerHTML = `<a href="${data.download_url}">Download JSON</a>`;
+    const info = data.data || {};
+    const rows = [
+      ["Company", info["Company Name"]],
+      ["Website", info["Website URL"]],
+      ["Email", info["Email ID"]],
+      ["Phone", info["Phone (if verified)"]],
+      ["LinkedIn", info["LinkedIn Profile URL"]],
+      ["Location", info["Country / City"]],
+      ["Industry", info["Industry Segment"] || info["Industry Type (Hotel / Resort / Service Apartment, etc.)"]],
+      ["Google Rating", info["Google Rating"]],
+      ["Total Reviews", info["Total Google Reviews"]],
+    ].filter(([, value]) => value);
 
-    const cols = ["company_name","company_size","country","city","website","linkedin_url","role","person_name","person_email","person_linkedin"];
-    let html = '<table><thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
-    for (const row of data.items) {
-      html += '<tr>' + cols.map(c => `<td>${row[c] ?? ""}</td>`).join('') + '</tr>';
-    }
-    html += '</tbody></table>';
+    const summary = rows.length
+      ? rows.map(([label, value]) => `<div><b>${label}:</b> ${value}</div>`).join("")
+      : "<div>No enrichment data returned.</div>";
 
-    if (tableWrap) tableWrap.innerHTML = html;
-
+    box.innerHTML = `<td colspan="6">${summary}</td>`;
   } catch (err) {
-    if (resultsCard) resultsCard.style.display = 'block';
-    if (metaEl) metaEl.innerHTML = '';
-    if (downloadEl) downloadEl.innerHTML = '';
-    if (tableWrap) tableWrap.innerHTML = `<div>⚠️ ${err.message}</div>`;
+    box.innerHTML = `<td colspan="6">Error: ${err.message}</td>`;
   }
-};
+}
 
-window.resetForm = function resetForm() {
-  const industryEl = document.getElementById('industry');
-  const sizeMinEl  = document.getElementById('sizeMin');
-  const sizeMaxEl  = document.getElementById('sizeMax');
-  const rolesEl    = document.getElementById('roles');
 
-  if (industryEl) industryEl.value = 'Hospitality & Travel';
-  if (sizeMinEl)  sizeMinEl.value  = '50';
-  if (sizeMaxEl)  sizeMaxEl.value  = '5000';
-  if (rolesEl)    rolesEl.value    = 'CEO, COO, Head of Operations, General Manager, GM';
-
-  // default: nothing selected
+// ------------------ Reset ------------------
+function resetForm() {
+  industryEl.value = "Hospitality & Travel";
+  sizeMinEl.value = "50";
+  sizeMaxEl.value = "5000";
+  rolesEl.value = "CEO, COO, Head of Operations, General Manager, GM";
   setSelectedCountries([]);
+  resultsCard.style.display = "none";
+  metaEl.innerHTML = "";
+  downloadEl.innerHTML = "";
+  tableWrap.innerHTML = "";
+}
 
-  if (resultsCard) resultsCard.style.display = 'none';
-  if (metaEl) metaEl.innerHTML = '';
-  if (downloadEl) downloadEl.innerHTML = '';
-  if (tableWrap) tableWrap.innerHTML = '';
-};
+
+// ------------------ Event Listeners ------------------
+searchBtn?.addEventListener("click", runSearch);
+resetBtn?.addEventListener("click", resetForm);
+
+console.log("Lead finder loaded.");
