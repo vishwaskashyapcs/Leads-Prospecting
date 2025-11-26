@@ -58,12 +58,12 @@ OUTPUT FORMAT:
     return f"{base_context}\n\n{firmographics}\n{instructions}"
 
 
-def query_groq(prompt, model="llama-3.1-8b-instant", temperature=0.1, max_tokens=1500):
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
+def query_groq(prompt, model="llama-3.1-8b-instant", temperature=0.1, max_tokens=1500, api_key=None):
+    key = api_key or os.getenv("GROQ_API_KEY")
+    if not key:
         raise EnvironmentError("Missing GROQ_API_KEY")
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     payload = {
         "model": model,
         "messages": [

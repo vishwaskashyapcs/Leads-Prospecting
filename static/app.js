@@ -18,7 +18,77 @@ const metaEl = document.getElementById("meta");
 const downloadEl = document.getElementById("download");
 const tableWrap = document.getElementById("tableWrap");
 
+const DETAIL_COLSPAN = 7;
 let latestCompanies = [];
+
+function escapeHtml(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatValue(value, type) {
+  if (!value) return "—";
+  if (type === "link") {
+    return `<a href="${value}" target="_blank" rel="noopener">${escapeHtml(value)}</a>`;
+  }
+  return escapeHtml(value);
+}
+
+function renderInfoRows(rows = []) {
+  if (!rows.length) {
+    return '<div class="detail-empty">No data available.</div>';
+  }
+
+  return `
+    <div class="info-grid">
+      ${rows
+        .map(
+          ([label, value, type]) => `
+            <div class="info-row">
+              <div class="info-label">${escapeHtml(label)}</div>
+              <div class="info-value">${formatValue(value, type)}</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderInsightChips(title, items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {
+    return `
+      <div class="insight-section">
+        <div class="insight-title">${escapeHtml(title)}</div>
+        <div class="insight-empty">No signals detected.</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="insight-section">
+      <div class="insight-title">${escapeHtml(title)}</div>
+      <div class="insight-chips">
+        ${list.map(item => `<span class="chip">${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderInsightsBlocks(insights = {}) {
+  return `
+    <div class="insight-grid">
+      ${renderInsightChips("Tech Stack Indicators", insights.tech_stack_indicators)}
+      ${renderInsightChips("Buying Triggers", insights.buying_triggers)}
+      ${renderInsightChips("Primary Pain Keywords", insights.primary_pain_keywords)}
+    </div>
+  `;
+}
 
 
 // ------------------ Countries Dropdown Logic ------------------
@@ -118,6 +188,7 @@ function buildCompaniesTable(items = []) {
         <tr>
           <th>Company</th>
           <th>Size</th>
+          <th>Revenue</th>
           <th>City</th>
           <th>Country</th>
           <th>Website</th>
@@ -130,6 +201,7 @@ function buildCompaniesTable(items = []) {
   latestCompanies.forEach((c, idx) => {
     const companyName = c?.company_name || "N/A";
     const companySize = c?.company_size || "N/A";
+    const revenue = c?.revenue || "N/A";
     const city = c?.city || "N/A";
     const country = c?.country || "N/A";
     const websiteDisplay = c?.website
@@ -140,6 +212,7 @@ function buildCompaniesTable(items = []) {
       <tr id="row-${idx}">
         <td>${companyName}</td>
         <td>${companySize}</td>
+        <td>${revenue}</td>
         <td>${city}</td>
         <td>${country}</td>
         <td>${websiteDisplay}</td>
@@ -148,11 +221,11 @@ function buildCompaniesTable(items = []) {
           <button class="btn primary" onclick="findLead(${idx})">Find Lead</button>
         </td>
       </tr>
-      <tr id="enrich-${idx}" style="display:none;">
-        <td colspan="6" class="lead-box">Preparing enrichment...</td>
+      <tr id="enrich-${idx}" class="detail-row" style="display:none;">
+        <td colspan="${DETAIL_COLSPAN}">Preparing enrichment...</td>
       </tr>
-      <tr id="lead-${idx}" style="display:none;">
-        <td colspan="6" class="lead-box">Fetching lead...</td>
+      <tr id="lead-${idx}" class="detail-row" style="display:none;">
+        <td colspan="${DETAIL_COLSPAN}">Fetching lead...</td>
       </tr>
     `;
   });
@@ -170,7 +243,7 @@ async function findLead(idx) {
   if (!company || !box) return;
 
   box.style.display = "table-row";
-  box.innerHTML = `<td colspan="6">Searching LinkedIn for ${companyName}...</td>`;
+  box.innerHTML = `<td colspan="${DETAIL_COLSPAN}" class="detail-card">Searching LinkedIn for ${escapeHtml(companyName)}...</td>`;
 
   try {
     const res = await fetch("/api/company/find-lead", {
@@ -184,25 +257,28 @@ async function findLead(idx) {
 
     const people = Array.isArray(data.people) ? data.people : [];
     if (!people.length) {
-      box.innerHTML = `<td colspan="6">No person found.</td>`;
+      box.innerHTML = `<td colspan="${DETAIL_COLSPAN}" class="detail-card">No person found.</td>`;
       return;
     }
 
     const p = people[0];
-    const linkedin = p.linkedin
-      ? `<a href="${p.linkedin}" target="_blank" rel="noopener">${p.linkedin}</a>`
-      : "LinkedIn unavailable";
+    const rows = [
+      ["Name", p.name || "Unknown contact"],
+      ["Role", p.role || "Role unavailable"],
+      ["LinkedIn", p.linkedin || "", "link"],
+    ];
 
     box.innerHTML = `
-      <td colspan="6">
-        <div><strong>${p.name || "Unknown contact"}</strong></div>
-        <div>${p.role || "Role unavailable"}</div>
-        <div>${linkedin}</div>
+      <td colspan="${DETAIL_COLSPAN}">
+        <div class="detail-card lead-card">
+          <div class="detail-header">Key Contact</div>
+          ${renderInfoRows(rows)}
+        </div>
       </td>
     `;
 
   } catch (err) {
-    box.innerHTML = `<td colspan="6">Error: ${err.message}</td>`;
+    box.innerHTML = `<td colspan="${DETAIL_COLSPAN}" class="detail-card">Error: ${escapeHtml(err.message)}</td>`;
   }
 }
 
@@ -215,11 +291,19 @@ async function enrichCompany(idx) {
   if (!company || !box) return;
 
   box.style.display = "table-row";
-  box.innerHTML = `<td colspan="6">Enriching ${companyName}...</td>`;
+  box.innerHTML = `<td colspan="${DETAIL_COLSPAN}" class="detail-card">Enriching ${escapeHtml(companyName)}...</td>`;
 
   try {
-    const payload = { company_name: companyName };
-    if (website) payload.website = website;
+    const payload = {
+      company_name: companyName,
+      website: website || "",
+      company_size: company?.company_size || "",
+      revenue: company?.revenue || "",
+      city: company?.city || "",
+      country: company?.country || "",
+      source: company?.source || "",
+      headquarters: company?.headquarters || "",
+    };
 
     const res = await fetch("/api/company/enrich", {
       method: "POST",
@@ -231,25 +315,41 @@ async function enrichCompany(idx) {
     if (!res.ok || !data.ok) throw new Error(data.error || "Enrichment failed");
 
     const info = data.data || {};
+    const insights = data.insights || info.insights || {
+      tech_stack_indicators: [],
+      buying_triggers: [],
+      primary_pain_keywords: [],
+    };
+    console.info(`Enrichment result for ${companyName}`, { info, insights });
+
     const rows = [
       ["Company", info["Company Name"]],
-      ["Website", info["Website URL"]],
+      ["Website", info["Website URL"], "link"],
       ["Email", info["Email ID"]],
       ["Phone", info["Phone (if verified)"]],
-      ["LinkedIn", info["LinkedIn Profile URL"]],
+      ["LinkedIn", info["LinkedIn Profile URL"], "link"],
       ["Location", info["Country / City"]],
       ["Industry", info["Industry Segment"] || info["Industry Type (Hotel / Resort / Service Apartment, etc.)"]],
       ["Google Rating", info["Google Rating"]],
       ["Total Reviews", info["Total Google Reviews"]],
-    ].filter(([, value]) => value);
+    ];
+    const downloadLink = data.download_url
+      ? `<div class="detail-download"><a href="${data.download_url}" target="_blank" rel="noopener">Download raw JSON</a></div>`
+      : "";
 
-    const summary = rows.length
-      ? rows.map(([label, value]) => `<div><b>${label}:</b> ${value}</div>`).join("")
-      : "<div>No enrichment data returned.</div>";
-
-    box.innerHTML = `<td colspan="6">${summary}</td>`;
+    box.innerHTML = `
+      <td colspan="${DETAIL_COLSPAN}">
+        <div class="detail-card">
+          <div class="detail-header">Company Enrichment</div>
+          ${renderInfoRows(rows)}
+          <div class="insight-header">GTM Insight Summary</div>
+          ${renderInsightsBlocks(insights)}
+          ${downloadLink}
+        </div>
+      </td>
+    `;
   } catch (err) {
-    box.innerHTML = `<td colspan="6">Error: ${err.message}</td>`;
+    box.innerHTML = `<td colspan="${DETAIL_COLSPAN}" class="detail-card">Error: ${escapeHtml(err.message)}</td>`;
   }
 }
 
@@ -268,7 +368,6 @@ function resetForm() {
 }
 
 
-// ------------------ Event Listeners ------------------
 searchBtn?.addEventListener("click", runSearch);
 resetBtn?.addEventListener("click", resetForm);
 

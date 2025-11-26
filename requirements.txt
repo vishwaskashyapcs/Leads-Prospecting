@@ -7,4 +7,4 @@ timezonefinder==6.2.0
 timezonefinder==6.2.0
 pytz==2024.1
 flask-cors==4.0.1
-apify-client==1.6.1
+# apify-client==1.6.1  # Disabled while Apify client is not in use

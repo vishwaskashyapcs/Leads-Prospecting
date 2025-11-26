@@ -150,6 +150,136 @@ th {
 tbody tr:hover { background: rgba(255,255,255,0.03); }
 td a { color: var(--link); text-decoration: none; }
 td a:hover { text-decoration: underline; }
+.actions-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detail-row td {
+  background: #080d1f;
+  padding: 0;
+  border: none;
+}
+
+.detail-card {
+  padding: 18px 22px;
+  border-top: 1px solid var(--border);
+  background: #0d1633;
+}
+
+.detail-header {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.info-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255,255,255,0.02);
+}
+
+.info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.7;
+  letter-spacing: 0.08em;
+}
+
+.info-value {
+  margin-top: 4px;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.detail-empty {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.detail-download {
+  margin-top: 14px;
+}
+
+.detail-download a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--link);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.detail-download a:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.insight-header {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.insight-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.insight-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  opacity: 0.75;
+  margin-bottom: 8px;
+}
+
+.insight-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(91, 123, 255, 0.15);
+  border: 1px solid rgba(91, 123, 255, 0.3);
+  font-size: 12px;
+}
+
+.insight-empty {
+  font-size: 12px;
+  opacity: 0.7;
+}
 
 /* Links */
 a { color: var(--link); }

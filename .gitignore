@@ -17,4 +17,8 @@ node_modules/
 Thumbs.db
 
 # Logs
-*.log
+*.log 
+
+
+# If exports/ was already committed, remove it from the index so .gitignore will ignore it
+git rm -r --cached exports
